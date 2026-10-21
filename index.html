@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuestLog — Gamified RPG Task Dashboard</title>
+
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              rpg: {
+                dark: "#090d16",
+                surface: "#0f172a",
+                card: "#1e293b",
+                border: "#334155",
+                gold: "#f59e0b",
+                emerald: "#10b981",
+                rose: "#f43f5e",
+                accent: "#6366f1",
+              },
+            },
+            animation: {
+              "glow-pulse": "glowPulse 2.5s infinite ease-in-out",
+              "float-slow": "floating 3s ease-in-out infinite",
+              shimmer: "shimmer 2.2s infinite",
+            },
+            keyframes: {
+              glowPulse: {
+                "0%, 100%": {
+                  opacity: "0.4",
+                  filter: "drop-shadow(0 0 15px rgba(245, 158, 11, 0.4))",
+                },
+                "50%": {
+                  opacity: "0.8",
+                  filter: "drop-shadow(0 0 25px rgba(245, 158, 11, 0.75))",
+                },
+              },
+              floating: {
+                "0%, 100%": { transform: "translateY(0px)" },
+                "50%": { transform: "translateY(-5px)" },
+              },
+              shimmer: {
+                "0%": { transform: "translateX(-100%)" },
+                "100%": { transform: "translateX(100%)" },
+              },
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      /* Custom Scrollbar for gaming aesthetic */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #090d16;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+
+      /* Floating XP/Gold text animation */
+      @keyframes floatUpFade {
+        0% {
+          opacity: 1;
+          transform: translate(-50%, 0) scale(0.9);
+        }
+        50% {
+          transform: translate(-50%, -28px) scale(1.15);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -55px) scale(0.85);
+        }
+      }
+
+      .float-text {
+        position: absolute;
+        pointer-events: none;
+        z-index: 100;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        animation: floatUpFade 1.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+      }
+
+      /* Level up modal pulse overlay */
+      @keyframes modalPop {
+        0% {
+          transform: scale(0.7) translateY(20px);
+          opacity: 0;
+        }
+        100% {
+          transform: scale(1) translateY(0);
+          opacity: 1;
+        }
+      }
+      .modal-enter {
+        animation: modalPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)
+          forwards;
+      }
+
+      /* Screen flash on damage / penalty */
+      @keyframes screenHurt {
+        0% {
+          box-shadow: inset 0 0 0 0 rgba(244, 63, 94, 0);
+        }
+        30% {
+          box-shadow: inset 0 0 60px 20px rgba(244, 63, 94, 0.45);
+        }
+        100% {
+          box-shadow: inset 0 0 0 0 rgba(244, 63, 94, 0);
+        }
+      }
+      .penalty-flash {
+        animation: screenHurt 0.6s ease-out forwards;
+      }
+
+      /* Gold coin flip */
+      @keyframes coinSpin {
+        0% {
+          transform: rotateY(0deg);
+        }
+        100% {
+          transform: rotateY(360deg);
+        }
+      }
+      .coin-spin {
+        animation: coinSpin 0.7s ease-in-out;
+      }
+    </style>
+  </head>
+  <body
+    id="app-body"
+    class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased selection:bg-amber-500 selection:text-slate-950 relative overflow-x-hidden"
+  >
+    <!-- Ambient RPG Atmosphere Glows -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+      <div
+        class="absolute -top-32 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"
+      ></div>
+      <div
+        class="absolute top-1/3 -right-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl"
+      ></div>
+      <div
+        class="absolute bottom-10 left-10 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl"
+      ></div>
+    </div>
+
+    <!-- Particle / FX Canvas for Level Ups & Victory Burst -->
+    <canvas
+      id="fx-canvas"
+      class="fixed inset-0 pointer-events-none z-50 w-full h-full"
+    ></canvas>
+
+    <div
+      class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8"
+    >
+      <!-- TOP NAVIGATION BAR -->
+      <header
+        class="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-800/80"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-300 p-0.5 shadow-lg shadow-amber-500/20 flex items-center justify-center"
+          >
+            <div
+              class="w-full h-full bg-slate-900 rounded-[10px] flex items-center justify-center text-xl"
+            >
+              ⚔️
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1
+                class="text-2xl font-black tracking-wider uppercase bg-clip-text text-transparent bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500"
+              >
+                QuestLog
+              </h1>
+              <span
+                class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400"
+              >
+                RPG Task Engine
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 font-medium">
+              Turn daily struggles into legendary conquests
+            </p>
+          </div>
+        </div>
+
+        <!-- Quick Controls -->
+        <div class="flex items-center gap-3">
+          <!-- Audio Synthesizer Toggle -->
+          <button
+            id="toggle-audio-btn"
+            onclick="toggleAudio()"
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-medium text-slate-300 transition-all"
+            title="Toggle Sound FX"
+          >
+            <span id="audio-icon">🔊</span>
+            <span id="audio-label" class="hidden sm:inline">SFX On</span>
+          </button>
+
+          <!-- Change Character Title / Avatar -->
+          <button
+            onclick="openAvatarModal()"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition-all"
+          >
+            <span>🧙‍♂️</span>
+            <span class="hidden sm:inline">Class & Title</span>
+          </button>
+
+          <!-- Reset Game Data -->
+          <button
+            onclick="confirmResetData()"
+            class="p-1.5 rounded-lg bg-slate-800/50 hover:bg-rose-950/40 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 text-xs transition-all"
+            title="Reset RPG Save"
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- CHARACTER DASHBOARD (HERO SECTION) -->
+      <section
+        class="relative bg-gradient-to-r from-slate-900 via-slate-800/95 to-slate-900 border border-slate-700/80 rounded-2xl p-5 sm:p-6 shadow-2xl backdrop-blur-md overflow-hidden"
+      >
+        <!-- Glow ambient lines -->
+        <div
+          class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-amber-500/60 to-transparent"
+        ></div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          <!-- Left: Avatar & Character Identity -->
+          <div class="md:col-span-5 lg:col-span-4 flex items-center gap-4">
+            <div
+              class="relative group cursor-pointer"
+              onclick="openAvatarModal()"
+            >
+              <!-- Glowing animated avatar ring -->
+              <div
+                id="avatar-aura"
+                class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-amber-500 via-indigo-500 to-emerald-400 p-1 shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/40 transition-all duration-300"
+              >
+                <div
+                  class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-4xl sm:text-5xl select-none"
+                  id="avatar-emoji"
+                >
+                  🧙‍♂️
+                </div>
+              </div>
+              <!-- Numerical Level Badge -->
+              <div
+                class="absolute -bottom-2 -right-2 bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-black text-xs sm:text-sm px-2.5 py-0.5 rounded-full shadow-md border-2 border-slate-950 flex items-center gap-0.5"
+              >
+                <span>LVL</span>
+                <span id="char-level-badge">1</span>
+              </div>
+            </div>
+
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <h2
+                  id="char-name"
+                  class="text-xl sm:text-2xl font-black text-white tracking-wide truncate"
+                >
+                  Arcane Scribe
+                </h2>
+                <button
+                  onclick="editCharacterName()"
+                  class="text-slate-400 hover:text-amber-400 transition-colors"
+                  title="Rename Character"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <p
+                id="char-title"
+                class="text-xs sm:text-sm font-semibold text-amber-400/90 tracking-wide"
+              >
+                Level 1 Novice
+              </p>
+
+              <div
+                class="flex items-center gap-3 mt-2 text-[11px] text-slate-400"
+              >
+                <span class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span id="stat-completed-count">0</span> Finished
+                </span>
+                <span class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+                  <span id="stat-failed-count">0</span> Abandoned
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Center: Animated XP Gauge -->
+          <div
+            class="md:col-span-4 lg:col-span-5 flex flex-col justify-center space-y-2"
+          >
+            <div class="flex justify-between items-center text-xs">
+              <span
+                class="font-bold tracking-wider text-emerald-400 uppercase flex items-center gap-1.5"
+              >
+                <svg
+                  class="w-3.5 h-3.5 animate-pulse"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.381z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                Experience (XP)
+              </span>
+              <span class="text-slate-300 font-mono text-xs">
+                <span id="char-current-xp" class="text-emerald-300 font-bold"
+                  >0</span
+                >
+                / <span id="char-needed-xp" class="text-slate-400">100</span> XP
+                <span
+                  id="char-xp-pct"
+                  class="text-[10px] text-emerald-400 ml-1 font-semibold"
+                  >(0%)</span
+                >
+              </span>
+            </div>
+
+            <!-- Progress Bar Container -->
+            <div
+              class="relative w-full h-4 bg-slate-950/80 rounded-full border border-slate-700/80 overflow-hidden shadow-inner p-0.5"
+            >
+              <div
+                id="xp-progress-bar"
+                class="h-full rounded-full bg-gradient-to-r from-emerald-600 via-emerald-400 to-teal-300 transition-all duration-500 ease-out relative overflow-hidden"
+                style="width: 0%"
+              >
+                <!-- Shimmer light reflection effect -->
+                <div
+                  class="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"
+                ></div>
+              </div>
+            </div>
+
+            <div class="flex justify-between text-[10px] text-slate-400">
+              <span>Next Level Bonus: +20% Cap</span>
+              <span id="xp-remaining-text" class="text-amber-400/90 font-medium"
+                >100 XP to next tier</span
+              >
+            </div>
+          </div>
+
+          <!-- Right: Gold Treasure Vault -->
+          <div class="md:col-span-3 lg:col-span-3 flex md:justify-end">
+            <div
+              class="w-full md:w-auto bg-slate-950/70 border border-amber-500/30 rounded-xl p-3 sm:p-4 flex items-center justify-between md:justify-end gap-3 shadow-lg shadow-black/40"
+            >
+              <div class="text-left md:text-right">
+                <span
+                  class="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest block"
+                >
+                  Total Bounty
+                </span>
+                <div class="flex items-baseline md:justify-end gap-1">
+                  <span
+                    id="char-gold"
+                    class="text-2xl sm:text-3xl font-black font-mono text-amber-400 tracking-tight"
+                  >
+                    25
+                  </span>
+                  <span class="text-xs font-bold text-amber-500">G</span>
+                </div>
+              </div>
+
+              <!-- Animated 3D-styled gold coin -->
+              <div
+                id="gold-coin-icon"
+                class="w-12 h-12 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-yellow-600 p-0.5 shadow-md shadow-amber-500/30 flex items-center justify-center transform hover:scale-110 transition-transform cursor-pointer"
+                onclick="triggerCoinJingle()"
+              >
+                <div
+                  class="w-full h-full rounded-full bg-gradient-to-tr from-amber-600 to-yellow-400 flex items-center justify-center border border-amber-200/50"
+                >
+                  <span class="text-slate-950 font-black text-base select-none"
+                    >🪙</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- QUEST CREATOR FORM -->
+      <section
+        class="bg-slate-800/60 border border-slate-700/80 rounded-2xl p-5 sm:p-6 shadow-xl backdrop-blur-sm"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h3
+            class="text-base sm:text-lg font-black tracking-wide text-white uppercase flex items-center gap-2"
+          >
+            <span class="text-amber-400">📜</span> Forge New Quest
+          </h3>
+          <span class="text-xs text-slate-400 hidden sm:inline"
+            >Set your target, choose difficulty, and claim renown</span
+          >
+        </div>
+
+        <form
+          id="quest-form"
+          onsubmit="handleCreateQuest(event)"
+          class="space-y-4"
+        >
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <!-- Quest Name Field -->
+            <div class="md:col-span-5">
+              <label
+                for="quest-title"
+                class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5"
+              >
+                Quest Objective <span class="text-rose-400">*</span>
+              </label>
+              <div class="relative">
+                <input
+                  type="text"
+                  id="quest-title"
+                  required
+                  maxlength="80"
+                  placeholder="e.g. Slay the Project Architecture Dragon..."
+                  class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                />
+                <span class="absolute right-3 top-2.5 text-slate-500 text-sm"
+                  >⚔️</span
+                >
+              </div>
+            </div>
+
+            <!-- Difficulty / Priority Select -->
+            <div class="md:col-span-4">
+              <label
+                for="quest-difficulty"
+                class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5"
+              >
+                Difficulty & Bounty
+              </label>
+              <select
+                id="quest-difficulty"
+                onchange="updateRewardPreview()"
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all cursor-pointer"
+              >
+                <option value="easy">Easy — +10 XP / +5 Gold</option>
+                <option value="medium" selected>
+                  Medium — +25 XP / +15 Gold
+                </option>
+                <option value="hard">Hard — +50 XP / +30 Gold</option>
+              </select>
+            </div>
+
+            <!-- Deadline Input -->
+            <div class="md:col-span-3">
+              <label
+                for="quest-deadline"
+                class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5"
+              >
+                Deadline Target
+              </label>
+              <input
+                type="date"
+                id="quest-deadline"
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+              />
+            </div>
+          </div>
+
+          <!-- Action Row & Reward Dynamic Feedback -->
+          <div
+            class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2"
+          >
+            <!-- Bounty preview badge -->
+            <div
+              id="reward-preview-pill"
+              class="flex items-center gap-3 text-xs bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2"
+            >
+              <span class="text-slate-400 font-medium"
+                >Yield on Completion:</span
+              >
+              <span class="flex items-center gap-1 font-bold text-emerald-400">
+                <span>⚡</span> <span id="preview-xp">+25</span> XP
+              </span>
+              <span class="text-slate-700">|</span>
+              <span class="flex items-center gap-1 font-bold text-amber-400">
+                <span>🪙</span> <span id="preview-gold">+15</span> Gold
+              </span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <!-- Quick preset dates -->
+              <button
+                type="button"
+                onclick="setQuickDate('today')"
+                class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onclick="setQuickDate('tomorrow')"
+                class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+              >
+                Tomorrow
+              </button>
+
+              <!-- Submit Button -->
+              <button
+                type="submit"
+                class="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm tracking-wide shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transform hover:-translate-y-0.5 active:translate-y-0 transition-all"
+              >
+                <span>Accept Quest</span>
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2.5"
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- SEARCH & FILTER BAR -->
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <!-- Search Input -->
+        <div class="relative w-full sm:w-80">
+          <input
+            type="text"
+            id="search-filter"
+            oninput="handleSearch(this.value)"
+            placeholder="Search quests by name..."
+            class="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+          />
+          <svg
+            class="w-4 h-4 absolute left-3 top-2.5 text-slate-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+        </div>
+
+        <!-- Difficulty Filter Chips -->
+        <div
+          class="flex items-center gap-1.5 self-start sm:self-auto overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0"
+        >
+          <button
+            onclick="setFilter('all')"
+            id="filter-all"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-amber-500 text-slate-950 shadow-sm"
+          >
+            All
+          </button>
+          <button
+            onclick="setFilter('easy')"
+            id="filter-easy"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-slate-800 text-slate-400 hover:text-white"
+          >
+            Easy
+          </button>
+          <button
+            onclick="setFilter('medium')"
+            id="filter-medium"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-slate-800 text-slate-400 hover:text-white"
+          >
+            Medium
+          </button>
+          <button
+            onclick="setFilter('hard')"
+            id="filter-hard"
+            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-slate-800 text-slate-400 hover:text-white"
+          >
+            Hard
+          </button>
+        </div>
+      </div>
+
+      <!-- QUEST BOARD (TWO COLUMNS: ACTIVE vs COMPLETED) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <!-- ACTIVE QUESTS COLUMN (7 Columns on LG) -->
+        <div class="lg:col-span-7 space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <h3
+                class="text-lg font-black tracking-wide text-white uppercase flex items-center gap-2"
+              >
+                <span
+                  class="w-3 h-3 rounded-full bg-amber-500 animate-pulse"
+                ></span>
+                Active Quests
+              </h3>
+              <span
+                id="active-badge-count"
+                class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30"
+              >
+                0
+              </span>
+            </div>
+            <span class="text-[11px] text-slate-500"
+              >Defeat to gain XP & Gold</span
+            >
+          </div>
+
+          <!-- Active Quest Cards Container -->
+          <div id="active-quest-list" class="space-y-3 min-h-[160px]">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+
+        <!-- COMPLETED QUESTS COLUMN (5 Columns on LG) -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <h3
+                class="text-lg font-black tracking-wide text-white uppercase flex items-center gap-2"
+              >
+                <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                Conquered Quests
+              </h3>
+              <span
+                id="completed-badge-count"
+                class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+              >
+                0
+              </span>
+            </div>
+
+            <!-- Clear completed quests -->
+            <button
+              id="clear-completed-btn"
+              onclick="clearCompletedQuests()"
+              class="text-[11px] font-bold text-slate-400 hover:text-rose-400 transition-colors hidden"
+            >
+              Purge Archives
+            </button>
+          </div>
+
+          <!-- Completed Quest Cards Container -->
+          <div id="completed-quest-list" class="space-y-3 min-h-[160px]">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+      </div>
+
+      <!-- FOOTER / STATS OVERVIEW -->
+      <footer
+        class="pt-8 border-t border-slate-800 text-center text-xs text-slate-500 space-y-2"
+      >
+        <div
+          class="flex flex-wrap items-center justify-center gap-4 text-slate-400 font-medium"
+        >
+          <span>⚔️ RPG Productivity System</span>
+          <span>•</span>
+          <span>⚡ Autosaved to Local Storage</span>
+          <span>•</span>
+          <span>🏆 Competitive Hackathon Ready</span>
+        </div>
+        <p class="text-[11px] text-slate-600">
+          Warning: Abandoning active quests incurs a
+          <span class="text-rose-400 font-bold">-2 Gold</span> failure penalty!
+        </p>
+      </footer>
+    </div>
+
+    <!-- LEVEL UP CELEBRATION MODAL -->
+    <div
+      id="level-modal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md hidden opacity-0 transition-opacity duration-300"
+    >
+      <div
+        class="relative w-full max-w-md bg-gradient-to-b from-slate-900 via-slate-800 to-slate-950 border-2 border-amber-500/80 rounded-3xl p-6 sm:p-8 shadow-2xl text-center overflow-hidden modal-enter"
+      >
+        <!-- Glow ambient lights -->
+        <div
+          class="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/30 rounded-full blur-2xl"
+        ></div>
+
+        <!-- Level Up Icon Banner -->
+        <div
+          class="relative w-24 h-24 mx-auto mb-4 rounded-3xl bg-gradient-to-tr from-amber-500 via-yellow-300 to-amber-600 p-1 shadow-xl shadow-amber-500/40"
+        >
+          <div
+            class="w-full h-full bg-slate-950 rounded-[22px] flex items-center justify-center text-5xl"
+          >
+            🌟
+          </div>
+        </div>
+
+        <span
+          class="text-xs uppercase font-black tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full"
+        >
+          Heroic Breakthrough
+        </span>
+
+        <h3
+          class="text-3xl font-black text-white uppercase tracking-wider mt-3"
+        >
+          Level Up!
+        </h3>
+
+        <p class="text-slate-300 text-sm mt-1">
+          You have advanced to
+          <span id="modal-new-level" class="text-amber-400 font-black text-base"
+            >Level 2</span
+          >!
+        </p>
+
+        <div
+          class="my-5 p-4 rounded-2xl bg-slate-950/80 border border-slate-700 space-y-2 text-left"
+        >
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">New Rank Title:</span>
+            <span id="modal-new-title" class="text-emerald-400 font-bold"
+              >Dungeon Scout</span
+            >
+          </div>
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Bonus Gold Awarded:</span>
+            <span class="text-amber-400 font-bold">+10 G</span>
+          </div>
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Next Level Requirement:</span>
+            <span id="modal-next-xp-cap" class="text-indigo-400 font-bold"
+              >120 XP</span
+            >
+          </div>
+        </div>
+
+        <button
+          onclick="closeLevelModal()"
+          class="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-amber-500/30 transition-all transform hover:scale-[1.02]"
+        >
+          Claim Glory & Continue
+        </button>
+      </div>
+    </div>
+
+    <!-- AVATAR / CHARACTER CLASS CUSTOMIZER MODAL -->
+    <div
+      id="avatar-modal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300"
+    >
+      <div
+        class="relative w-full max-w-sm bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl text-center space-y-5"
+      >
+        <div
+          class="flex justify-between items-center pb-2 border-b border-slate-800"
+        >
+          <h4 class="text-base font-black uppercase text-white tracking-wide">
+            Select Character Archetype
+          </h4>
+          <button
+            onclick="closeAvatarModal()"
+            class="text-slate-400 hover:text-white text-lg font-bold"
+          >
+            &times;
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+          Choose the hero avatar that represents your productive avatar in the
+          kingdom.
+        </p>
+
+        <!-- Avatar grid -->
+        <div class="grid grid-cols-4 gap-3">
+          <button
+            onclick="selectAvatar('🧙‍♂️')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🧙‍♂️
+          </button>
+          <button
+            onclick="selectAvatar('⚔️')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            ⚔️
+          </button>
+          <button
+            onclick="selectAvatar('🏹')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🏹
+          </button>
+          <button
+            onclick="selectAvatar('🛡️')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🛡️
+          </button>
+          <button
+            onclick="selectAvatar('🥷')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🥷
+          </button>
+          <button
+            onclick="selectAvatar('🐉')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🐉
+          </button>
+          <button
+            onclick="selectAvatar('🧛')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🧛
+          </button>
+          <button
+            onclick="selectAvatar('🤖')"
+            class="avatar-opt p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400 text-3xl transition-all"
+          >
+            🤖
+          </button>
+        </div>
+
+        <button
+          onclick="closeAvatarModal()"
+          class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white uppercase tracking-wider transition-all"
+        >
+          Done
+        </button>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script src="addons.js"></script>
+    <script src="loader.js"></script>
+  </body>
+</html>
